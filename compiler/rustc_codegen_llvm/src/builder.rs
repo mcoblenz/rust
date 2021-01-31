@@ -383,12 +383,14 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
     }
 
     fn alloca(&mut self, ty: &'ll Type, align: Align) -> &'ll Value {
+        debug!("alloca with type {:?}", ty);
         let mut bx = Builder::with_cx(self.cx);
         bx.position_at_start(unsafe { llvm::LLVMGetFirstBasicBlock(self.llfn()) });
         bx.dynamic_alloca(ty, align)
     }
 
     fn dynamic_alloca(&mut self, ty: &'ll Type, align: Align) -> &'ll Value {
+        debug!("dynamic_alloca with type {:?}", ty);
         unsafe {
             let alloca = llvm::LLVMBuildAlloca(self.llbuilder, ty, UNNAMED);
             llvm::LLVMSetAlignment(alloca, align.bytes() as c_uint);
@@ -401,6 +403,17 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
             let alloca = llvm::LLVMBuildArrayAlloca(self.llbuilder, ty, len, UNNAMED);
             llvm::LLVMSetAlignment(alloca, align.bytes() as c_uint);
             alloca
+        }
+    }
+
+    fn gcroot(&mut self, alloca_ptr: &'ll Value) -> &'ll Value {
+        unsafe {
+            debug!("gcroot with alloca_ptr {:?}", alloca_ptr);
+            // TOOD: pass real metadata.
+            let gcroot: &Value =
+                llvm::LLVMRustBuildGcRootIntrinsic(self.llbuilder, alloca_ptr, alloca_ptr);
+
+            gcroot
         }
     }
 

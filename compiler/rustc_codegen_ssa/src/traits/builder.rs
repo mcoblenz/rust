@@ -129,6 +129,7 @@ pub trait BuilderMethods<'a, 'tcx>:
     fn alloca(&mut self, ty: Self::Type, align: Align) -> Self::Value;
     fn dynamic_alloca(&mut self, ty: Self::Type, align: Align) -> Self::Value;
     fn array_alloca(&mut self, ty: Self::Type, len: Self::Value, align: Align) -> Self::Value;
+    fn gcroot(&mut self, alloca_ptr: Self::Value) -> Self::Value;
 
     fn load(&mut self, ptr: Self::Value, align: Align) -> Self::Value;
     fn volatile_load(&mut self, ptr: Self::Value) -> Self::Value;

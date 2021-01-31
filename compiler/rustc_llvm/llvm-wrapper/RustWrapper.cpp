@@ -1013,6 +1013,10 @@ extern "C" int64_t LLVMRustDIBuilderCreateOpPlusUconst() {
   return dwarf::DW_OP_plus_uconst;
 }
 
+extern "C" void LLVMRustSetGC(LLVMValueRef V) {
+    unwrap<Function>(V)->setGC("shadow-stack");
+}
+
 extern "C" void LLVMRustWriteTypeToString(LLVMTypeRef Ty, RustStringRef Str) {
   RawRustStringOstream OS(Str);
   unwrap<llvm::Type>(Ty)->print(OS);
@@ -1385,6 +1389,22 @@ extern "C" LLVMValueRef LLVMRustBuildCall(LLVMBuilderRef B, LLVMValueRef Fn,
   ArrayRef<OperandBundleDef> Bundles = makeArrayRef(Bundle, Len);
   return wrap(unwrap(B)->CreateCall(
       FTy, Callee, makeArrayRef(unwrap(Args), NumArgs), Bundles));
+}
+
+extern "C" LLVMValueRef LLVMRustBuildGcRootIntrinsic(LLVMBuilderRef B,
+                                                     LLVMValueRef Alloca_addr,
+                                                     LLVMValueRef Metadata) {
+    Value *Alloca = unwrap(Alloca_addr);
+    Type *PtrPtr = unwrap(B)->getInt8Ty()->getPointerTo(0);
+    Type *i8PtrPtrType = PtrPtr->getPointerTo(0);
+
+    // Alloca is of type i32**. gcroot requires i8**. Let's cast.
+
+    Value *CastAlloca = unwrap(B)->CreateBitCast(Alloca, i8PtrPtrType);
+    CallInst *GCRoot = unwrap(B)->CreateIntrinsic(Intrinsic::gcroot, {},
+    {CastAlloca, Constant::getNullValue(PtrPtr)}); // Alloca for 0th arg
+
+    return wrap(GCRoot);
 }
 
 extern "C" LLVMValueRef LLVMRustGetInstrProfIncrementIntrinsic(LLVMModuleRef M) {

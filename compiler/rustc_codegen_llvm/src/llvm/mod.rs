@@ -16,6 +16,8 @@ use std::ffi::{CStr, CString};
 use std::str::FromStr;
 use std::string::FromUtf8Error;
 
+use tracing::debug;
+
 pub mod archive_ro;
 pub mod diagnostic;
 mod ffi;
@@ -115,6 +117,13 @@ pub fn UnsetComdat(val: &'a Value) {
 pub fn SetUnnamedAddress(global: &'a Value, unnamed: UnnamedAddr) {
     unsafe {
         LLVMSetUnnamedAddress(global, unnamed);
+    }
+}
+
+pub fn SetGC(func: &'a Value) {
+    unsafe {
+        debug!("calling LLVMRustSetGC on {:?}", func);
+        LLVMRustSetGC(func);
     }
 }
 

@@ -41,6 +41,7 @@ fn declare_raw_fn(
     // Function addresses in Rust are never significant, allowing functions to
     // be merged.
     llvm::SetUnnamedAddress(llfn, llvm::UnnamedAddr::Global);
+    llvm::SetGC(llfn);
 
     if cx.tcx.sess.opts.cg.no_redzone.unwrap_or(cx.tcx.sess.target.disable_redzone) {
         llvm::Attribute::NoRedZone.apply_llfn(Function, llfn);

@@ -616,6 +616,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                 }
             }
             mir::Rvalue::NullaryOp(mir::NullOp::Box, _) => {
+                debug!("found a box {:?}", *rvalue);
                 let tcx = self.tcx;
                 let exchange_malloc_fn_def_id =
                     tcx.require_lang_item(LangItem::ExchangeMalloc, None);

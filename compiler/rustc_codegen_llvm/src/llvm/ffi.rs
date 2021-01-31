@@ -1511,6 +1511,13 @@ extern "C" {
         NumArgs: c_uint,
         Bundle: Option<&OperandBundleDef<'a>>,
     ) -> &'a Value;
+
+    pub fn LLVMRustBuildGcRootIntrinsic(
+        B: &Builder<'a>,
+        ptrloc: &'a Value,
+        metadata: &'a Value,
+    ) -> &'a Value;
+
     pub fn LLVMRustBuildMemCpy(
         B: &Builder<'a>,
         Dst: &'a Value,
@@ -2078,6 +2085,8 @@ extern "C" {
     ) -> &'a DIDerivedType;
 
     pub fn LLVMSetUnnamedAddress(Global: &Value, UnnamedAddr: UnnamedAddr);
+
+    pub fn LLVMRustSetGC(func: &Value);
 
     pub fn LLVMRustDIBuilderCreateTemplateTypeParameter(
         Builder: &DIBuilder<'a>,

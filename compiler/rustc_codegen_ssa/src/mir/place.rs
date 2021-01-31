@@ -50,7 +50,24 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         layout: TyAndLayout<'tcx>,
     ) -> Self {
         assert!(!layout.is_unsized(), "tried to statically allocate unsized place");
+        debug!("alloca in place.rs with type {:?}", layout.ty);
         let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi);
+        let adt = layout.ty.ty_adt_def();
+        match adt {
+            None => (),
+            Some(adt_def) => {
+                debug!("found an ADT: {:?}", adt_def);
+                if adt_def.variants.len() > 0 {
+                    let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
+                    // MJC FIXME: make this test less hacky.
+                    if adt_name.as_str() == "GcRef" {
+                        debug!("Adding a GCRoot for ADT {:?}", adt_name);
+                        bx.gcroot(tmp);
+                    }
+                }
+            }
+        }
+
         Self::new_sized(tmp, layout)
     }
 
