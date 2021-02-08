@@ -51,22 +51,44 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
     ) -> Self {
         assert!(!layout.is_unsized(), "tried to statically allocate unsized place");
         debug!("alloca in place.rs with type {:?}", layout.ty);
-        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi);
+
         let adt = layout.ty.ty_adt_def();
-        match adt {
-            None => (),
+        let (is_root, _is_fat) = match adt {
+            None => (false, false),
             Some(adt_def) => {
                 debug!("found an ADT: {:?}", adt_def);
+                debug!("full type: {:?}", layout.ty);
                 if adt_def.variants.len() > 0 {
                     let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
                     // MJC FIXME: make this test less hacky.
                     if adt_name.as_str() == "GcRef" {
                         debug!("Adding a GCRoot for ADT {:?}", adt_name);
-                        bx.gcroot(tmp);
+                        // do something with layout.ty
+                       
+                        // Determine whether this is a fat or thin pointer. If fat,
+                        // we'll need to insert a SECOND alloca that will point to the first one.
+                        // Also, if this is a fat pointer, initialize the first field.
+
+                        
+
+                        (true, false)
+                    }
+                    else {
+                        (false, false)
                     }
                 }
+                else {
+                    (false, false)
+                }
             }
-        }
+        };
+
+        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root);
+        
+        // If this is a fat pointer, we need a SECOND alloca to point to the first one.
+        // This allows us to use the existing shadow-stack GC code, which expects that each alloca 
+        // corresponds with exactly one pointer (not a struct).
+
 
         Self::new_sized(tmp, layout)
     }

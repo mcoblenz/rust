@@ -382,11 +382,21 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
         val
     }
 
-    fn alloca(&mut self, ty: &'ll Type, align: Align) -> &'ll Value {
+    fn alloca(&mut self, ty: &'ll Type, align: Align, is_root: bool) -> &'ll Value {
         debug!("alloca with type {:?}", ty);
         let mut bx = Builder::with_cx(self.cx);
         bx.position_at_start(unsafe { llvm::LLVMGetFirstBasicBlock(self.llfn()) });
-        bx.dynamic_alloca(ty, align)
+        let val = bx.dynamic_alloca(ty, align);
+
+        if is_root {
+            let forty_two = bx.cx().const_u8(42);
+            let u8_ptr_type = bx.cx().type_ptr_to(bx.cx().type_i8());
+            let forty_two_ptr = bx.inttoptr(forty_two, u8_ptr_type);
+            debug!("inserting gcroot from inside alloca");
+            bx.gcroot(val, forty_two_ptr);
+        }
+
+        val
     }
 
     fn dynamic_alloca(&mut self, ty: &'ll Type, align: Align) -> &'ll Value {
@@ -406,12 +416,15 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
         }
     }
 
-    fn gcroot(&mut self, alloca_ptr: &'ll Value) -> &'ll Value {
+    // metadata must be of type i8*.
+    fn gcroot(&mut self, alloca_ptr: &'ll Value, metadata: &'ll Value) -> &'ll Value {
         unsafe {
             debug!("gcroot with alloca_ptr {:?}", alloca_ptr);
             // TOOD: pass real metadata.
+            // Put the gcroot in the same basic block as the allocation, but at the end.
+            
             let gcroot: &Value =
-                llvm::LLVMRustBuildGcRootIntrinsic(self.llbuilder, alloca_ptr, alloca_ptr);
+                llvm::LLVMRustBuildGcRootIntrinsic(self.llbuilder, alloca_ptr, metadata);
 
             gcroot
         }

@@ -1391,18 +1391,22 @@ extern "C" LLVMValueRef LLVMRustBuildCall(LLVMBuilderRef B, LLVMValueRef Fn,
       FTy, Callee, makeArrayRef(unwrap(Args), NumArgs), Bundles));
 }
 
+// Metadata must be of type i8*.
 extern "C" LLVMValueRef LLVMRustBuildGcRootIntrinsic(LLVMBuilderRef B,
                                                      LLVMValueRef Alloca_addr,
                                                      LLVMValueRef Metadata) {
     Value *Alloca = unwrap(Alloca_addr);
-    Type *PtrPtr = unwrap(B)->getInt8Ty()->getPointerTo(0);
-    Type *i8PtrPtrType = PtrPtr->getPointerTo(0);
+    Type *i8PtrType = unwrap(B)->getInt8Ty()->getPointerTo(0);
+    Type *i8PtrPtrType = i8PtrType->getPointerTo(0);
 
     // Alloca is of type i32**. gcroot requires i8**. Let's cast.
 
     Value *CastAlloca = unwrap(B)->CreateBitCast(Alloca, i8PtrPtrType);
+
+    Value *CastMetadata = unwrap(B)->CreateBitCast(unwrap(Metadata), i8PtrType);
+
     CallInst *GCRoot = unwrap(B)->CreateIntrinsic(Intrinsic::gcroot, {},
-    {CastAlloca, Constant::getNullValue(PtrPtr)}); // Alloca for 0th arg
+    {CastAlloca, CastMetadata}); // Alloca for 0th arg
 
     return wrap(GCRoot);
 }
