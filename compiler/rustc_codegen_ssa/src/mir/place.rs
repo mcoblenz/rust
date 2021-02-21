@@ -1,3 +1,5 @@
+// use std::any::Any;
+
 use super::operand::OperandValue;
 use super::{FunctionCx, LocalRef};
 
@@ -6,10 +8,12 @@ use crate::glue;
 use crate::traits::*;
 use crate::MemFlags;
 
+use mir::interpret::PointerArithmetic;
 use rustc_middle::mir;
 use rustc_middle::mir::tcx::PlaceTy;
 use rustc_middle::ty::layout::{HasTyCtxt, TyAndLayout};
 use rustc_middle::ty::{self, Ty};
+use rustc_middle::ty::subst::GenericArgKind;
 use rustc_target::abi::{Abi, Align, FieldsShape, Int, TagEncoding};
 use rustc_target::abi::{LayoutOf, VariantIdx, Variants};
 
@@ -52,43 +56,52 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         assert!(!layout.is_unsized(), "tried to statically allocate unsized place");
         debug!("alloca in place.rs with type {:?}", layout.ty);
 
-        let adt = layout.ty.ty_adt_def();
-        let (is_root, _is_fat) = match adt {
-            None => (false, false),
-            Some(adt_def) => {
-                debug!("found an ADT: {:?}", adt_def);
-                debug!("full type: {:?}", layout.ty);
-                if adt_def.variants.len() > 0 {
-                    let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
-                    // MJC FIXME: make this test less hacky.
-                    if adt_name.as_str() == "GcRef" {
-                        debug!("Adding a GCRoot for ADT {:?}", adt_name);
-                        // do something with layout.ty
-                       
-                        // Determine whether this is a fat or thin pointer. If fat,
-                        // we'll need to insert a SECOND alloca that will point to the first one.
-                        // Also, if this is a fat pointer, initialize the first field.
+        let (is_root, is_fat) = match layout.ty.kind() {
+            ty::Adt(adt_def, substs) => {
+                let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
+                if adt_name.as_str() == "GcRef" {
+                    debug!("Adding a GCRoot for ADT {:?}", adt_name);
+                    debug!("Type and layout: {:?}", layout);
 
-                        
-
-                        (true, false)
+                    if substs.len() == 1 {
+                        match substs.get(0).expect("missing parameter").unpack() {
+                            GenericArgKind::Type(ty_param) => {
+                                debug!("type parameter: {:?}", ty_param);
+                                let is_trait = ty_param.is_trait();
+                                debug!("type parameter is trait: {:?}", is_trait);
+                                (true, is_trait)
+                            }
+                            _ => {
+                                debug!("Unexpected substitution found in GcRef: {:?}", layout.ty.kind());
+                                (true, false)
+                            }
+                        }
                     }
                     else {
-                        (false, false)
+                        // I have no idea what this is.
+                        panic!("Wrong number of substitutions found in type {:?}", layout.ty.kind())
                     }
                 }
                 else {
                     (false, false)
                 }
             }
+            _ => (false, false)
         };
 
-        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root);
+        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root && !is_fat);
         
         // If this is a fat pointer, we need a SECOND alloca to point to the first one.
         // This allows us to use the existing shadow-stack GC code, which expects that each alloca 
         // corresponds with exactly one pointer (not a struct).
+        if is_root && is_fat {
+            let u8ptr_type = bx.type_ptr_to(bx.type_i8());
 
+            // TODO: mark this root as a special (indirect) root
+            let root_alloca = bx.alloca(u8ptr_type, layout.align.abi, true);
+            let ptr_alignment = Align::from_bits(bx.pointer_size().bits()).expect("alignment failure");
+            bx.store(tmp, root_alloca, ptr_alignment);
+        }
 
         Self::new_sized(tmp, layout)
     }
