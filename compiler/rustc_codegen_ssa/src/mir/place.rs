@@ -58,28 +58,33 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
 
         let (is_root, is_fat) = match layout.ty.kind() {
             ty::Adt(adt_def, substs) => {
-                let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
-                if adt_name.as_str() == "GcRef" {
-                    debug!("Adding a GCRoot for ADT {:?}", adt_name);
-                    debug!("Type and layout: {:?}", layout);
+                if adt_def.variants.len() > 0 {
+                    let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
+                    if adt_name.as_str() == "GcRef" {
+                        debug!("Adding a GCRoot for ADT {:?}", adt_name);
+                        debug!("Type and layout: {:?}", layout);
 
-                    if substs.len() == 1 {
-                        match substs.get(0).expect("missing parameter").unpack() {
-                            GenericArgKind::Type(ty_param) => {
-                                debug!("type parameter: {:?}", ty_param);
-                                let is_trait = ty_param.is_trait();
-                                debug!("type parameter is trait: {:?}", is_trait);
-                                (true, is_trait)
+                        if substs.len() == 1 {
+                            match substs.get(0).expect("missing parameter").unpack() {
+                                GenericArgKind::Type(ty_param) => {
+                                    debug!("type parameter: {:?}", ty_param);
+                                    let is_trait = ty_param.is_trait();
+                                    debug!("type parameter is trait: {:?}", is_trait);
+                                    (true, is_trait)
+                                }
+                                _ => {
+                                    debug!("Unexpected substitution found in GcRef: {:?}", layout.ty.kind());
+                                    (true, false)
+                                }
                             }
-                            _ => {
-                                debug!("Unexpected substitution found in GcRef: {:?}", layout.ty.kind());
-                                (true, false)
-                            }
+                        }
+                        else {
+                            // I have no idea what this is.
+                            panic!("Wrong number of substitutions found in type {:?}", layout.ty.kind())
                         }
                     }
                     else {
-                        // I have no idea what this is.
-                        panic!("Wrong number of substitutions found in type {:?}", layout.ty.kind())
+                        (false, false)
                     }
                 }
                 else {
