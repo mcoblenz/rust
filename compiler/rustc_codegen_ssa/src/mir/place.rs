@@ -55,10 +55,10 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
             ty::Adt(adt_def, substs) => {
                 if adt_def.variants.len() > 0 {
                     for variant in &adt_def.variants {
-                        // TODO: check crate too
-                        let crate_name = tcx.crate_name(variant.def_id.krate);
+                        let crate_name = tcx.crate_name(variant.def_id.krate).as_str();
+                        let variant_name = variant.ident.name.as_str();
 
-                        if variant.ident.name.as_str() == "GcRef" {
+                        if crate_name == "bronze" && variant_name == "GcRef" {
                             println!("crate name: {}", crate_name);
                             if substs.len() == 1 {
                                 match substs.get(0).expect("missing parameter").unpack() {
