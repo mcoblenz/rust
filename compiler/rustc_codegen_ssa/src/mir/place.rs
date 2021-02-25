@@ -16,6 +16,7 @@ use rustc_middle::ty::{self, Ty};
 use rustc_middle::ty::subst::GenericArgKind;
 use rustc_target::abi::{Abi, Align, FieldsShape, Int, TagEncoding};
 use rustc_target::abi::{LayoutOf, VariantIdx, Variants};
+use rustc_middle::ty::TyCtxt;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PlaceRef<'tcx, V> {
@@ -47,6 +48,56 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         PlaceRef { llval, llextra: None, layout, align }
     }
 
+
+    // returns (is_root, is_fat)
+    fn analyze_adt(ty: Ty<'_>, tcx: TyCtxt<'tcx>) -> (bool, bool) {
+        match ty.kind() {
+            ty::Adt(adt_def, substs) => {
+                if adt_def.variants.len() > 0 {
+                    for variant in &adt_def.variants {
+                        // TODO: check crate too
+                        let crate_name = tcx.crate_name(variant.def_id.krate);
+
+                        if variant.ident.name.as_str() == "GcRef" {
+                            println!("crate name: {}", crate_name);
+                            if substs.len() == 1 {
+                                match substs.get(0).expect("missing parameter").unpack() {
+                                    GenericArgKind::Type(ty_param) => {
+                                        let is_trait = ty_param.is_trait();
+                                        return (true, is_trait)
+                                    }
+                                    _ => {
+                                        panic!("Unexpected substitution found in GcRef: {:?}", ty);
+                                    }
+                                }
+                            }
+                            else {
+                                // I have no idea what this is.
+                                panic!("Wrong number of substitutions found in type {:?}", ty)
+                            }
+                        }
+
+                        let fields = &variant.fields;
+
+                        for field in fields {
+                            let field_did = field.did;
+                            let field_ty = tcx.type_of(field_did);
+                            let (field_is_root, _) = Self::analyze_adt(field_ty, tcx);
+                            if field_is_root {
+                                return (true, false) // Second element doesn't matter for fields
+                            }
+                        }
+                    }
+                    (false, false)
+                }
+                else {
+                    (false, false)
+                }
+            },
+            _ => (false, false)
+        }
+    }
+
     // FIXME(eddyb) pass something else for the name so no work is done
     // unless LLVM IR names are turned on (e.g. for `--emit=llvm-ir`).
     pub fn alloca<Bx: BuilderMethods<'a, 'tcx, Value = V>>(
@@ -56,43 +107,7 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         assert!(!layout.is_unsized(), "tried to statically allocate unsized place");
         debug!("alloca in place.rs with type {:?}", layout.ty);
 
-        let (is_root, is_fat) = match layout.ty.kind() {
-            ty::Adt(adt_def, substs) => {
-                if adt_def.variants.len() > 0 {
-                    let adt_name = adt_def.variants[VariantIdx::from_u32(0)].ident.name;
-                    if adt_name.as_str() == "GcRef" {
-                        debug!("Adding a GCRoot for ADT {:?}", adt_name);
-                        debug!("Type and layout: {:?}", layout);
-
-                        if substs.len() == 1 {
-                            match substs.get(0).expect("missing parameter").unpack() {
-                                GenericArgKind::Type(ty_param) => {
-                                    debug!("type parameter: {:?}", ty_param);
-                                    let is_trait = ty_param.is_trait();
-                                    debug!("type parameter is trait: {:?}", is_trait);
-                                    (true, is_trait)
-                                }
-                                _ => {
-                                    debug!("Unexpected substitution found in GcRef: {:?}", layout.ty.kind());
-                                    (true, false)
-                                }
-                            }
-                        }
-                        else {
-                            // I have no idea what this is.
-                            panic!("Wrong number of substitutions found in type {:?}", layout.ty.kind())
-                        }
-                    }
-                    else {
-                        (false, false)
-                    }
-                }
-                else {
-                    (false, false)
-                }
-            }
-            _ => (false, false)
-        };
+        let (is_root, is_fat) = Self::analyze_adt(layout.ty, bx.cx().tcx());
 
         let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root && !is_fat);
         
