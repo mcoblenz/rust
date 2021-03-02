@@ -240,7 +240,7 @@ impl ArgAbiExt<'ll, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
                 // We instead thus allocate some scratch space...
                 let scratch_size = cast.size(bx);
                 let scratch_align = cast.align(bx);
-                let llscratch = bx.alloca(cast.llvm_type(bx), scratch_align, false);
+                let llscratch = bx.alloca(cast.llvm_type(bx), scratch_align, false, false);
                 bx.lifetime_start(llscratch, scratch_size);
 
                 // ... where we first store the value...

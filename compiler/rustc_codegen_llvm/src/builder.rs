@@ -382,18 +382,27 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
         val
     }
 
-    fn alloca(&mut self, ty: &'ll Type, align: Align, is_root: bool) -> &'ll Value {
+    fn alloca(&mut self, ty: &'ll Type, align: Align, is_root: bool, is_fat: bool) -> &'ll Value {
         debug!("alloca with type {:?}", ty);
         let mut bx = Builder::with_cx(self.cx);
         bx.position_at_start(unsafe { llvm::LLVMGetFirstBasicBlock(self.llfn()) });
         let val = bx.dynamic_alloca(ty, align);
 
         if is_root {
-            let forty_two = bx.cx().const_u8(42);
-            let u8_ptr_type = bx.cx().type_ptr_to(bx.cx().type_i8());
-            let forty_two_ptr = bx.inttoptr(forty_two, u8_ptr_type);
+            let metadata = if is_fat {
+                let one = bx.cx().const_u8(1);
+                let u8_ptr_type = bx.cx().type_ptr_to(bx.cx().type_i8());
+                bx.inttoptr(one, u8_ptr_type)
+            }
+            else {
+                // Choosing zero will result in not allocating metadata at all.
+                let zero = bx.cx().const_u8(0);
+                let u8_ptr_type = bx.cx().type_ptr_to(bx.cx().type_i8());
+                bx.inttoptr(zero, u8_ptr_type)
+            };
+            
             debug!("inserting gcroot from inside alloca");
-            bx.gcroot(val, forty_two_ptr);
+            bx.gcroot(val, metadata);
         }
 
         val

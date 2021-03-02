@@ -48,51 +48,68 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         PlaceRef { llval, llextra: None, layout, align }
     }
 
-
     // returns (is_root, is_fat)
     fn analyze_adt(ty: Ty<'_>, tcx: TyCtxt<'tcx>) -> (bool, bool) {
         match ty.kind() {
             ty::Adt(adt_def, substs) => {
-                if adt_def.variants.len() > 0 {
-                    for variant in &adt_def.variants {
-                        let crate_name = tcx.crate_name(variant.def_id.krate).as_str();
-                        let variant_name = variant.ident.name.as_str();
+                for variant in &adt_def.variants {
+                    let crate_name = tcx.crate_name(variant.def_id.krate).as_str();
+                    let variant_name = variant.ident.name.as_str();
 
-                        if crate_name == "bronze" && variant_name == "GcRef" {
-                            println!("crate name: {}", crate_name);
-                            if substs.len() == 1 {
-                                match substs.get(0).expect("missing parameter").unpack() {
-                                    GenericArgKind::Type(ty_param) => {
-                                        let is_trait = ty_param.is_trait();
-                                        return (true, is_trait)
-                                    }
-                                    _ => {
-                                        panic!("Unexpected substitution found in GcRef: {:?}", ty);
-                                    }
+                    if crate_name == "bronze" && variant_name == "GcRef" {
+                        debug!("found bronze::GcRef in variant {:?} of type {:?}", variant, ty);
+                        if substs.len() == 1 {
+                            match substs.get(0).expect("missing parameter").unpack() {
+                                GenericArgKind::Type(ty_param) => {
+                                    let is_trait = ty_param.is_trait();
+                                    return (true, is_trait)
+                                }
+                                _ => {
+                                    panic!("Unexpected substitution found in GcRef: {:?}", ty);
                                 }
                             }
-                            else {
-                                // I have no idea what this is.
-                                panic!("Wrong number of substitutions found in type {:?}", ty)
-                            }
                         }
-
-                        let fields = &variant.fields;
-
-                        for field in fields {
-                            let field_did = field.did;
-                            let field_ty = tcx.type_of(field_did);
-                            let (field_is_root, _) = Self::analyze_adt(field_ty, tcx);
-                            if field_is_root {
-                                return (true, false) // Second element doesn't matter for fields
-                            }
+                        else {
+                            // I have no idea what this is.
+                            panic!("Wrong number of substitutions found in type {:?}", ty)
                         }
                     }
-                    (false, false)
+
+                    let fields = &variant.fields;
+
+                    for field in fields {
+                        let field_did = field.did;
+                        let _field_ty = tcx.type_of(field_did);
+
+                        // XXX avoid infinite recursion! Self::analyze_adt(field_ty, tcx);
+                        let (field_is_root, _) = (false, false); 
+                        if field_is_root {
+                            return (true, false) // Second element doesn't matter for fields
+                        }
+                    }
+
+                    
                 }
-                else {
-                    (false, false)
-                }
+
+                // Even if none of the variants has a GcRef field, what if there are raw pointers inside
+                // that point to GcRefs? We can detect that case conservatively by looking for GcRef type parameters.
+                // But even if we did, how would we trace these objects? They'd have to be GcTrace.
+
+                // for subst in *substs {
+                //     match subst.unpack() {
+                //         GenericArgKind::Type(ty_param) => {
+                //             let (param_is_root, _param_is_fat) = Self::analyze_adt(ty_param, tcx);
+                //             if param_is_root {
+                //                 debug!("found GcRef in type parameter of {:?}", ty);
+                //                 // Treat anything that isn't just a GcRef as a fat pointer.
+                //                 return (true, true); 
+                //             }
+                //         }
+                //         _ => ()
+                //     }
+                // }
+
+                (false, false)
             },
             _ => (false, false)
         }
@@ -109,7 +126,8 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
 
         let (is_root, is_fat) = Self::analyze_adt(layout.ty, bx.cx().tcx());
 
-        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root && !is_fat);
+        // If this is a fat pointer, don't treat it as a root. Wait for the special case below.
+        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root && !is_fat, false);
         
         // If this is a fat pointer, we need a SECOND alloca to point to the first one.
         // This allows us to use the existing shadow-stack GC code, which expects that each alloca 
@@ -118,7 +136,7 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
             let u8ptr_type = bx.type_ptr_to(bx.type_i8());
 
             // TODO: mark this root as a special (indirect) root
-            let root_alloca = bx.alloca(u8ptr_type, layout.align.abi, true);
+            let root_alloca = bx.alloca(u8ptr_type, layout.align.abi, true, true);
             let ptr_alignment = Align::from_bits(bx.pointer_size().bits()).expect("alignment failure");
             bx.store(tmp, root_alloca, ptr_alignment);
         }
