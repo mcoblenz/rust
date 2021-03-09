@@ -313,6 +313,7 @@ symbols! {
         braced_empty_structs,
         breakpoint,
         bridge,
+        bronze_gc, // Do I want this here?
         bswap,
         c_str,
         c_variadic,
@@ -565,6 +566,8 @@ symbols! {
         fundamental,
         future,
         future_trait,
+        gcfinalize, // Do I want this here?
+        gctrace, // Do I want this here?
         ge,
         gen_future,
         gen_kill,

@@ -831,3 +831,4 @@ mod copy_impls {
     #[stable(feature = "rust1", since = "1.0.0")]
     impl<T: ?Sized> Copy for &T {}
 }
+

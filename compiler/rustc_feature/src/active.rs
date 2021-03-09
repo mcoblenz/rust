@@ -631,6 +631,9 @@ declare_features! (
 
     /// Allows using `pointer` and `reference` in intra-doc links
     (active, intra_doc_pointers, "1.51.0", Some(80896), None),
+
+    /// Allows using garbage collection.
+    (active, bronze_gc, "1.51.0", None, None),
     // -------------------------------------------------------------------------
     // feature-group-end: actual feature gates
     // -------------------------------------------------------------------------

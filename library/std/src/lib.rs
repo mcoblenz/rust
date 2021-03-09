@@ -230,6 +230,7 @@
 #![feature(associated_type_bounds)]
 #![feature(atomic_mut_ptr)]
 #![feature(box_syntax)]
+#![cfg_attr(not(bootstrap), feature(bronze_gc))]
 #![feature(c_variadic)]
 #![feature(cfg_accessible)]
 #![feature(cfg_target_has_atomic)]
@@ -467,6 +468,8 @@ pub mod env;
 pub mod error;
 pub mod ffi;
 pub mod fs;
+#[unstable(feature = "bronze_gc", issue = "none")]
+pub mod gc;
 pub mod io;
 pub mod net;
 pub mod num;

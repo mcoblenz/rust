@@ -207,7 +207,8 @@ language_item_table! {
 
     CoerceUnsized,           sym::coerce_unsized,      coerce_unsized_trait,       Target::Trait;
     DispatchFromDyn,         sym::dispatch_from_dyn,   dispatch_from_dyn_trait,    Target::Trait;
-
+    GcTrace,                 sym::gctrace,             gctrace_trait,              Target::Trait;
+    GcFinalize,              sym::gcfinalize,          gcfinalize_trait,           Target::Trait;
     Add(Op),                 sym::add,                 add_trait,                  Target::Trait;
     Sub(Op),                 sym::sub,                 sub_trait,                  Target::Trait;
     Mul(Op),                 sym::mul,                 mul_trait,                  Target::Trait;

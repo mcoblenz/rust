@@ -8,7 +8,6 @@ use crate::glue;
 use crate::traits::*;
 use crate::MemFlags;
 
-use mir::interpret::PointerArithmetic;
 use rustc_middle::mir;
 use rustc_middle::mir::tcx::PlaceTy;
 use rustc_middle::ty::layout::{HasTyCtxt, TyAndLayout};
@@ -17,6 +16,7 @@ use rustc_middle::ty::subst::GenericArgKind;
 use rustc_target::abi::{Abi, Align, FieldsShape, Int, TagEncoding};
 use rustc_target::abi::{LayoutOf, VariantIdx, Variants};
 use rustc_middle::ty::TyCtxt;
+use rustc_data_structures::fx::FxHashSet;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PlaceRef<'tcx, V> {
@@ -49,7 +49,7 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
     }
 
     // returns (is_root, is_fat)
-    fn analyze_adt(ty: Ty<'_>, tcx: TyCtxt<'tcx>) -> (bool, bool) {
+    fn analyze_adt(ty: Ty<'_>, tcx: TyCtxt<'tcx>, visited_types: &mut FxHashSet<Ty<'tcx>>) -> (bool, bool) {
         match ty.kind() {
             ty::Adt(adt_def, substs) => {
                 for variant in &adt_def.variants {
@@ -77,15 +77,20 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
 
                     let fields = &variant.fields;
 
+
                     for field in fields {
                         let field_did = field.did;
-                        let _field_ty = tcx.type_of(field_did);
+                        let field_ty = tcx.type_of(field_did);
+                        if !visited_types.contains(field_ty) {
+                            visited_types.insert(field_ty);
 
-                        // XXX avoid infinite recursion! Self::analyze_adt(field_ty, tcx);
-                        let (field_is_root, _) = (false, false); 
-                        if field_is_root {
-                            return (true, false) // Second element doesn't matter for fields
+                            let (field_is_root, _) = Self::analyze_adt(field_ty, tcx, visited_types);
+                            if field_is_root {
+                                debug!("found root field with type {}", field_ty);
+                                return (true, true) // If the root is buried in a field, generate a pointer to the object. 
+                            }
                         }
+                        // Otherwise, there's a circular struct dependency, and there will be an error elsewhere.
                     }
 
                     
@@ -124,22 +129,12 @@ impl<'a, 'tcx, V: CodegenObject> PlaceRef<'tcx, V> {
         assert!(!layout.is_unsized(), "tried to statically allocate unsized place");
         debug!("alloca in place.rs with type {:?}", layout.ty);
 
-        let (is_root, is_fat) = Self::analyze_adt(layout.ty, bx.cx().tcx());
+        let mut visited_types = FxHashSet::default();
+        let (is_root, is_fat) = Self::analyze_adt(layout.ty, bx.cx().tcx(), &mut visited_types);
+        debug!("alloca found is_root {}, is_fat {}", is_root, is_fat);
 
         // If this is a fat pointer, don't treat it as a root. Wait for the special case below.
-        let tmp = bx.alloca(bx.cx().backend_type(layout), layout.align.abi, is_root && !is_fat, false);
-        
-        // If this is a fat pointer, we need a SECOND alloca to point to the first one.
-        // This allows us to use the existing shadow-stack GC code, which expects that each alloca 
-        // corresponds with exactly one pointer (not a struct).
-        if is_root && is_fat {
-            let u8ptr_type = bx.type_ptr_to(bx.type_i8());
-
-            // TODO: mark this root as a special (indirect) root
-            let root_alloca = bx.alloca(u8ptr_type, layout.align.abi, true, true);
-            let ptr_alignment = Align::from_bits(bx.pointer_size().bits()).expect("alignment failure");
-            bx.store(tmp, root_alloca, ptr_alignment);
-        }
+        let tmp = bx.alloca_fat_ptr(layout.ty, bx.cx().backend_type(layout), layout.align.abi, is_root, is_fat);
 
         Self::new_sized(tmp, layout)
     }
