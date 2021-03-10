@@ -200,7 +200,7 @@ pub fn unsize_thin_ptr<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
                 bx.bitcast(llextra, bx.cx().scalar_pair_element_backend_type(dst_layout, 1, true)),
             )
         }
-        _ => bug!("unsize_thin_ptr: called on bad types"),
+        _ => bug!("unsize_thin_ptr: called on bad types: src: {:?}, dst: {:?}", src_ty, dst_ty),
     }
 }
 

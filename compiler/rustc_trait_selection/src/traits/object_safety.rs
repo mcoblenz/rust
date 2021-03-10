@@ -542,7 +542,7 @@ fn receiver_for_self_ty<'tcx>(
 /// Creates the object type for the current trait. For example,
 /// if the current trait is `Deref`, then this will be
 /// `dyn Deref<Target = Self::Target> + 'static`.
-fn object_ty_for_trait<'tcx>(
+pub fn object_ty_for_trait<'tcx>(
     tcx: TyCtxt<'tcx>,
     trait_def_id: DefId,
     lifetime: ty::Region<'tcx>,

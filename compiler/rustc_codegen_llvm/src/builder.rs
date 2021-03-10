@@ -21,6 +21,7 @@ use rustc_middle::mir::interpret::PointerArithmetic;
 use rustc_span::{sym, Span};
 use rustc_target::abi::{self, Align, Size};
 use rustc_target::spec::{HasTargetSpec, Target};
+use rustc_trait_selection::traits::object_safety::object_ty_for_trait;
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::ops::{Deref, Range};
@@ -385,7 +386,7 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
         val
     }
 
-    fn alloca_fat_ptr(&mut self, _rust_ty: Ty<'_>, ty: &'ll Type, align: Align, is_root: bool, is_fat: bool) -> &'ll Value {
+    fn alloca_fat_ptr(&mut self, rust_type: Ty<'tcx>, ty: &'ll Type, align: Align, is_root: bool, is_fat: bool) -> &'ll Value {
         debug!("alloca with type {:?}", ty);
         let mut bx = Builder::with_cx(self.cx);
         bx.position_at_start(unsafe { llvm::LLVMGetFirstBasicBlock(self.llfn()) });
@@ -418,17 +419,17 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
             // let fat_ptr = unsize_thin_ptr(bx, rust_ty, )
 
 
-            let two = bx.cx().const_u8(2);
-            let u8_ptr_type = bx.cx().type_ptr_to(bx.cx().type_i8());
-            let metadata = bx.inttoptr(two, u8_ptr_type);
+            // let two = bx.cx().const_u8(2);
+            // let u8_ptr_type = bx.cx().type_ptr_to(bx.cx().type_i8());
+            // let metadata = bx.inttoptr(two, u8_ptr_type);
 
-            let alloca_ptr_type = bx.type_ptr_to(ty);
+            // let alloca_ptr_type = bx.type_ptr_to(ty);
 
-            let ptr_alignment = Align::from_bits(bx.pointer_size().bits()).expect("alignment failure");
+            // let ptr_alignment = Align::from_bits(bx.pointer_size().bits()).expect("alignment failure");
 
-            let indirect_ptr = bx.dynamic_alloca(alloca_ptr_type, ptr_alignment);
+            // let indirect_ptr = bx.dynamic_alloca(alloca_ptr_type, ptr_alignment);
 
-            bx.store(val, indirect_ptr, ptr_alignment);  
+            // bx.store(val, indirect_ptr, ptr_alignment);  
 
 
             let tcx = self.tcx;
@@ -442,15 +443,31 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
             // Maybe via hir::def_id()
             let gc_ref_def_id = tcx.require_lang_item(LangItem::GcTrace, None);
             debug!("gctrace trait def ID: {:?}", gc_ref_def_id);
+            let trait_object_ty = object_ty_for_trait(tcx, gc_ref_def_id, tcx.mk_region(ty::ReStatic));
+            // let trait_object_layout = bx.cx().layout_of(trait_object_ty);
+            let trait_ref_ty = tcx.mk_imm_ptr(trait_object_ty);
+            let val_ptr_ty = tcx.mk_imm_ptr(rust_type);
+
+            let (_base, info) = rustc_codegen_ssa::base::unsize_thin_ptr(&mut bx, val, val_ptr_ty, trait_ref_ty);
+            // Base and info had both better be pointers.
+            // The original alloca should already store the base. We just need to store the info.
+            // We'll record it in the metadata.
+            
 
 
-            // let predicate_iter = ???
-            // let existential_predicates = tcx.mk_poly_existential_predicates(predicate_iter);
-            // let reg = tcx.mk_region(ty::ReStatic);
-            // let dyn_gc_trace_ty = tcx.mk_dynamic(existential_predicates, reg);
-            // let fat_ptr = unsize_thin_ptr(bx, indirect_ptr, rust_ty, gc_trace_ty);
-              
-            bx.gcroot(indirect_ptr, metadata);
+            // let u8_ptr_ptr_type = tcx.mk_imm_ptr(tcx.mk_imm_ptr(tcx.types.u8));
+
+
+
+            // let u8_ptr_ptr_layout = bx.cx().layout_of(u8_ptr_ptr_type);
+            // let alloca_place = PlaceRef::new_sized(val, u8_ptr_ptr_layout);
+            // let fat_ptr_place = PlaceRef::alloca_unsized_indirect(&mut bx, trait_object_layout);     
+            // debug!("alloca_place: {:?}", alloca_place);
+            // debug!("fat_ptr_place: {:?}", fat_ptr_place);
+            // rustc_codegen_ssa::base::coerce_unsized_into(&mut bx, alloca_place, fat_ptr_place);
+            // debug!("fat_ptr_place fater coercion: {:?}", fat_ptr_place);
+
+            bx.gcroot(val, info);
         }
 
         val

@@ -82,7 +82,7 @@ fn unsize_thin_ptr<'tcx>(
             }
             result.unwrap()
         }
-        _ => bug!("unsize_thin_ptr: called on bad types"),
+        _ => bug!("unsize_thin_ptr: called on bad types: src: {:?}, dst: {:?}", src_layout.ty, dst_layout.ty),
     }
 }
 
